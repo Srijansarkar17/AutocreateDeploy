@@ -1,0 +1,9 @@
+Flask
+flask-cors
+python-dotenv
+gunicorn
+supabase
+PyJWT
+requests
+groq
+runwayml
