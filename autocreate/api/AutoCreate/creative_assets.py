@@ -104,8 +104,11 @@ def upload_image():
     }), 200
 
 
-@creative_assets_bp.route("/api/generate-assets", methods=["POST"])
+@creative_assets_bp.route("/api/generate-assets", methods=["POST","OPTIONS"])
 def generate_assets():
+    if request.method == "OPTIONS":
+        return "", 204
+
     data = request.get_json()
 
     user_id = data.get("user_id")
