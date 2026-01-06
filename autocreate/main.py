@@ -10,10 +10,9 @@ app = Flask(__name__)
 CORS(
     app,
     resources={r"/api/*": {"origins": "*"}},
-    supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization"],
-    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    supports_credentials=False
 )
+
 
 # --------------------------------------------------
 # Handle OPTIONS Preflight (Gunicorn-safe)
