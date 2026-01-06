@@ -3,7 +3,7 @@ from flask import Flask
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app, origins=["*"])
+CORS(app, origins=["*"], supports_credentials=True)
 
 from autocreate.api.AutoCreate.audience_step import audience_bp
 from autocreate.api.AutoCreate.budget_testing import budget_testing_bp
