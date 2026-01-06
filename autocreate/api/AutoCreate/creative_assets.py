@@ -65,9 +65,6 @@ def generate_image_with_runway(image_b64, prompt, filename):
 # --------------------------------------------------
 
 @creative_assets_bp.route("/api/upload-image", methods=["POST", "OPTIONS"])
-@cross_origin(
-    origins=["http://localhost:5173", "https://markos-awjq.vercel.app"]
-)
 def upload_image():
     if request.method == "OPTIONS":
         return "", 204
@@ -105,9 +102,6 @@ def upload_image():
 
 
 @creative_assets_bp.route("/api/generate-assets", methods=["POST", "OPTIONS"])
-@cross_origin(
-    origins=["http://localhost:5173", "https://markos-awjq.vercel.app"]
-)
 def generate_assets():
     if request.method == "OPTIONS":
         return "", 204
@@ -198,9 +192,6 @@ def generate_assets():
 
 
 @creative_assets_bp.route("/api/save-selected-assets", methods=["POST", "OPTIONS"])
-@cross_origin(
-    origins=["http://localhost:5173", "https://markos-awjq.vercel.app"]
-)
 def save_selected_assets():
     if request.method == "OPTIONS":
         return "", 204
