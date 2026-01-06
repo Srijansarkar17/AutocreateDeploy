@@ -6,8 +6,6 @@ import traceback
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 from runwayml import RunwayML, TaskFailedError
-from flask_cors import CORS
-CORS(app)
 
 # --------------------------------------------------
 # Blueprint
