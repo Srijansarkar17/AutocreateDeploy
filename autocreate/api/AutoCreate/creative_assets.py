@@ -58,7 +58,7 @@ def generate_image_with_runway(image_b64: str, prompt: str, filename: str):
 # --------------------------------------------------
 # ROUTES (STATELESS, PRODUCTION SAFE)
 # --------------------------------------------------
-@creative_assets_bp.route("/api/generate-assets", methods=["POST", "OPTIONS"])
+@creative_assets_bp.route("/api/generate-assets", methods=["POST"])
 def generate_assets():
     try:
         data = request.get_json(force=True)
