@@ -20,11 +20,10 @@ RUNWAY_API_KEY = os.getenv("RUNWAY_API_KEY")
 client = RunwayML(api_key=RUNWAY_API_KEY) if RUNWAY_API_KEY else None
 
 # --------------------------------------------------
-# In-memory storage (PRODUCTION-SAFE STRUCTURE)
-# NOTE: Still in-memory, but NOT user-coupled
+# In-memory storage (stateless-safe logic)
 # --------------------------------------------------
 
-campaigns = {}   # campaign_id -> campaign data
+campaigns = {}  # campaign_id -> campaign data
 
 # --------------------------------------------------
 # Helpers
@@ -81,15 +80,15 @@ def upload_image():
     if not user_id or not image_data:
         return jsonify({"error": "Missing user_id or image_data"}), 400
 
-    # Strip data URL prefix if present
     if "," in image_data:
         image_data = image_data.split(",")[1]
 
-    # Create / update campaign
     campaigns[campaign_id] = {
         "campaign_id": campaign_id,
         "user_id": user_id,
-        "created_at": campaigns.get(campaign_id, {}).get("created_at", datetime.utcnow().isoformat()),
+        "created_at": campaigns.get(campaign_id, {}).get(
+            "created_at", datetime.utcnow().isoformat()
+        ),
         "upload": {
             "image_data": image_data,
             "filename": filename,
@@ -120,11 +119,18 @@ def generate_assets():
     if not ad_type:
         return jsonify({"error": "ad_type is required"}), 400
 
-    campaign = campaigns.get(campaign_id)
-    if not campaign:
-        return jsonify({"error": "Campaign not found"}), 400
+    # 🔥 AUTO-CREATE CAMPAIGN IF MISSING (CRITICAL FIX)
+    if campaign_id not in campaigns:
+        campaigns[campaign_id] = {
+            "campaign_id": campaign_id,
+            "user_id": user_id,
+            "created_at": datetime.utcnow().isoformat(),
+            "assets": []
+        }
 
+    campaign = campaigns[campaign_id]
     upload = campaign.get("upload")
+
     if not upload:
         return jsonify({"error": "No uploaded image found for this campaign"}), 400
 
@@ -175,8 +181,8 @@ def generate_assets():
     if not assets:
         return jsonify({"error": "Failed to generate assets"}), 500
 
-    campaigns[campaign_id]["assets"] = assets
-    campaigns[campaign_id]["updated_at"] = datetime.utcnow().isoformat()
+    campaign["assets"] = assets
+    campaign["updated_at"] = datetime.utcnow().isoformat()
 
     return jsonify({
         "success": True,
@@ -192,12 +198,11 @@ def save_selected_assets():
     campaign_id = data.get("campaign_id")
     selected_assets = data.get("selected_assets", [])
 
-    campaign = campaigns.get(campaign_id)
-    if not campaign:
+    if campaign_id not in campaigns:
         return jsonify({"error": "Campaign not found"}), 404
 
-    campaign["selected_assets"] = selected_assets
-    campaign["updated_at"] = datetime.utcnow().isoformat()
+    campaigns[campaign_id]["selected_assets"] = selected_assets
+    campaigns[campaign_id]["updated_at"] = datetime.utcnow().isoformat()
 
     return jsonify({
         "success": True,
