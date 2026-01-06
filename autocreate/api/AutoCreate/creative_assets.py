@@ -81,8 +81,12 @@ def upload_image():
     if not user_id or not image_data:
         return jsonify({"error": "Missing user_id or image_data"}), 400
 
+    # Extract base64 data if it's a data URL
+    if "," in image_data:
+        image_data = image_data.split(",")[1]
+
     user_uploads.setdefault(user_id, {})[campaign_id] = {
-        "image_data": image_data,
+        "image_data": image_data,  # Store only base64 without data URL prefix
         "filename": filename,
         "ad_type": ad_type,
         "uploaded_at": datetime.utcnow().isoformat()
@@ -111,12 +115,23 @@ def generate_assets():
     if not user_id or not campaign_id:
         return jsonify({"error": "Missing user_id or campaign_id"}), 400
 
-    upload = user_uploads.get(user_id, {}).get(campaign_id)
-    if not upload:
-        return jsonify({"error": "No uploaded image found"}), 400
-
     if not ad_type:
         return jsonify({"error": "ad_type is required"}), 400
+
+    # Get user uploads for this user
+    user_data = user_uploads.get(user_id)
+    if not user_data:
+        return jsonify({"error": "No user data found"}), 400
+
+    # Find the upload for this campaign
+    upload = None
+    for cid, upload_data in user_data.items():
+        if cid == campaign_id:
+            upload = upload_data
+            break
+    
+    if not upload:
+        return jsonify({"error": "No uploaded image found for this campaign"}), 400
 
     goal_prompts = {
         "awareness": "eye-catching brand awareness advertisement",
@@ -140,7 +155,7 @@ def generate_assets():
     for i, prompt in enumerate(prompts):
         try:
             result = generate_image_with_runway(
-                upload["image_data"],
+                upload["image_data"],  # This should be base64 without data URL prefix
                 prompt,
                 upload["filename"]
             )
@@ -150,14 +165,24 @@ def generate_assets():
                 "image_url": result["image_url"],
                 "prompt": prompt,
                 "score": 85 + i * 2,
-                "task_id": result["task_id"]
+                "type": "ai_generated",
+                "task_id": result.get("task_id")
             })
         except Exception as e:
             print(f"Generation failed: {e}")
+            traceback.print_exc()
 
     if not assets:
         return jsonify({"error": "Failed to generate assets"}), 500
 
+    # Store assets in campaign
+    if campaign_id not in campaigns:
+        campaigns[campaign_id] = {
+            "user_id": user_id,
+            "created_at": datetime.utcnow().isoformat(),
+            "assets": []
+        }
+    
     campaigns[campaign_id]["assets"] = assets
 
     return jsonify({
