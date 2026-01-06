@@ -62,17 +62,30 @@ def generate_image_with_runway(image_b64: str, prompt: str, filename: str):
 def generate_assets():
     try:
         data = request.get_json(force=True)
-
+        
+        print(f"📥 Received request with keys: {data.keys() if data else 'No data'}")
+        
         image_data = data.get("image_data")
         filename = data.get("filename", "image.png")
         campaign_goal = data.get("campaign_goal", "awareness")
         ad_type = data.get("ad_type")
 
         if not image_data:
+            print("❌ No image_data provided")
             return jsonify({"error": "image_data is required"}), 400
 
         if not ad_type:
+            print("❌ No ad_type provided")
             return jsonify({"error": "ad_type is required"}), 400
+
+        print(f"✅ Valid input received: ad_type={ad_type}, filename={filename}, image_data_length={len(image_data) if image_data else 0}")
+
+        # Check if Runway client is configured
+        if not client:
+            print("❌ Runway client not configured - RUNWAY_API_KEY missing")
+            raise RuntimeError("RUNWAY_API_KEY not configured in environment variables")
+
+        print("✅ Runway client is configured")
 
         goal_prompts = {
             "awareness": "eye-catching brand awareness advertisement",
@@ -95,34 +108,49 @@ def generate_assets():
         ]
 
         assets = []
-
-        for i, prompt in enumerate(prompts):
+        
+        # Test with just ONE image first to debug
+        print(f"🚀 Starting generation with prompt: {prompts[0]}")
+        
+        try:
             result = generate_image_with_runway(
                 image_data,
-                prompt,
+                prompts[0],
                 filename
             )
-
+            
+            print(f"✅ First image generated successfully: {result['image_url'][:50]}...")
+            
             assets.append({
-                "id": i + 1,
-                "title": f"{ad_type} – Variation {i + 1}",
+                "id": 1,
+                "title": f"{ad_type} – Variation 1",
                 "image_url": result["image_url"],
-                "prompt": prompt,
-                "score": 85 + i * 2,
+                "prompt": prompts[0],
+                "score": 85,
                 "task_id": result["task_id"],
                 "type": "ai_generated"
             })
-
-        return jsonify({
-            "success": True,
-            "assets": assets
-        }), 200
+            
+            return jsonify({
+                "success": True,
+                "assets": assets,
+                "test_mode": True,
+                "message": "Generated 1 image for testing"
+            }), 200
+            
+        except Exception as gen_error:
+            print(f"❌ Error in generate_image_with_runway: {str(gen_error)}")
+            raise gen_error
 
     except Exception as e:
-        print("❌ Generation error:", e)
+        print("❌ Generation error:", str(e))
+        import traceback
+        print("Traceback:", traceback.format_exc())
+        
         return jsonify({
             "error": "Failed to generate assets",
-            "details": str(e)
+            "details": str(e),
+            "type": type(e).__name__
         }), 500
 
 
