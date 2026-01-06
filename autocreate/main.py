@@ -3,7 +3,7 @@ from flask import Flask
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app, origins=["https://markos-awjq.vercel.app", "http://localhost:5173"], supports_credentials=True)
+CORS(app, origins=["https://markos-awjq.vercel.app", "http://localhost:5173"], allow_headers=["Content-Type", "Authorization"],supports_credentials=True)
 
 from autocreate.api.AutoCreate.audience_step import audience_bp
 from autocreate.api.AutoCreate.budget_testing import budget_testing_bp
