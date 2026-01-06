@@ -4,40 +4,35 @@ import uuid
 import traceback
 from datetime import datetime
 from flask import Blueprint, request, jsonify
-from runwayml import RunwayML
 from flask_cors import cross_origin
-
+from runwayml import RunwayML
 
 # --------------------------------------------------
 # Blueprint
 # --------------------------------------------------
-
 creative_assets_bp = Blueprint("creative_assets", __name__)
 
 # --------------------------------------------------
 # Runway Client
 # --------------------------------------------------
-
 RUNWAY_API_KEY = os.getenv("RUNWAY_API_KEY")
 client = RunwayML(api_key=RUNWAY_API_KEY) if RUNWAY_API_KEY else None
 
 # --------------------------------------------------
 # In-memory storage (stateless-safe logic)
 # --------------------------------------------------
-
 campaigns = {}  # campaign_id -> campaign data
 
 # --------------------------------------------------
 # Helpers
 # --------------------------------------------------
-
 def get_mime_type(filename):
     ext = filename.lower().split(".")[-1]
     return {
         "png": "image/png",
         "jpg": "image/jpeg",
         "jpeg": "image/jpeg",
-        "webp": "image/webp"
+        "webp": "image/webp",
     }.get(ext, "image/png")
 
 
@@ -62,16 +57,22 @@ def generate_image_with_runway(image_b64, prompt, filename):
 
     return {
         "image_url": result.output[0],
-        "task_id": task.id
+        "task_id": task.id,
     }
 
 # --------------------------------------------------
 # Routes
 # --------------------------------------------------
 
-@creative_assets_bp.route("/api/upload-image", methods=["POST"])
+@creative_assets_bp.route("/api/upload-image", methods=["POST", "OPTIONS"])
+@cross_origin(
+    origins=["http://localhost:5173", "https://markos-awjq.vercel.app"]
+)
 def upload_image():
-    data = request.get_json()
+    if request.method == "OPTIONS":
+        return "", 204
+
+    data = request.get_json(silent=True) or {}
 
     user_id = data.get("user_id")
     image_data = data.get("image_data")
@@ -95,27 +96,23 @@ def upload_image():
             "image_data": image_data,
             "filename": filename,
             "ad_type": ad_type,
-            "uploaded_at": datetime.utcnow().isoformat()
+            "uploaded_at": datetime.utcnow().isoformat(),
         },
-        "assets": campaigns.get(campaign_id, {}).get("assets", [])
+        "assets": campaigns.get(campaign_id, {}).get("assets", []),
     }
 
-    return jsonify({
-        "success": True,
-        "campaign_id": campaign_id
-    }), 200
+    return jsonify({"success": True, "campaign_id": campaign_id}), 200
 
 
-@creative_assets_bp.route("/api/generate-assets", methods=["POST","OPTIONS"])
+@creative_assets_bp.route("/api/generate-assets", methods=["POST", "OPTIONS"])
 @cross_origin(
-    origins=["http://localhost:5173", "https://markos-awjq.vercel.app"],
-    supports_credentials=True
+    origins=["http://localhost:5173", "https://markos-awjq.vercel.app"]
 )
 def generate_assets():
     if request.method == "OPTIONS":
         return "", 204
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
 
     user_id = data.get("user_id")
     campaign_id = data.get("campaign_id")
@@ -128,13 +125,13 @@ def generate_assets():
     if not ad_type:
         return jsonify({"error": "ad_type is required"}), 400
 
-    # 🔥 AUTO-CREATE CAMPAIGN IF MISSING (CRITICAL FIX)
+    # Auto-create campaign if missing
     if campaign_id not in campaigns:
         campaigns[campaign_id] = {
             "campaign_id": campaign_id,
             "user_id": user_id,
             "created_at": datetime.utcnow().isoformat(),
-            "assets": []
+            "assets": [],
         }
 
     campaign = campaigns[campaign_id]
@@ -147,12 +144,11 @@ def generate_assets():
         "awareness": "eye-catching brand awareness advertisement",
         "consideration": "engaging product showcase",
         "conversions": "conversion-focused advertisement",
-        "retention": "customer retention advertisement"
+        "retention": "customer retention advertisement",
     }
 
     base_prompt = goal_prompts.get(
-        campaign_goal,
-        "professional product advertisement"
+        campaign_goal, "professional product advertisement"
     )
 
     prompts = [
@@ -160,7 +156,7 @@ def generate_assets():
         f"@product in {ad_type}, lifestyle setting, natural lighting, modern aesthetic",
         f"@product in {ad_type}, minimalist design, bold colors, marketing focused",
         f"@product in {ad_type}, creative concept, premium quality",
-        f"@product in {ad_type}, social media optimized, vibrant colors"
+        f"@product in {ad_type}, social media optimized, vibrant colors",
     ]
 
     assets = []
@@ -168,23 +164,22 @@ def generate_assets():
     for i, prompt in enumerate(prompts):
         try:
             result = generate_image_with_runway(
-                upload["image_data"],
-                prompt,
-                upload["filename"]
+                upload["image_data"], prompt, upload["filename"]
             )
 
-            assets.append({
-                "id": i + 1,
-                "title": f"{ad_type} – Variation {i + 1}",
-                "image_url": result["image_url"],
-                "prompt": prompt,
-                "score": 85 + i * 2,
-                "type": "ai_generated",
-                "task_id": result.get("task_id")
-            })
-
+            assets.append(
+                {
+                    "id": i + 1,
+                    "title": f"{ad_type} – Variation {i + 1}",
+                    "image_url": result["image_url"],
+                    "prompt": prompt,
+                    "score": 85 + i * 2,
+                    "type": "ai_generated",
+                    "task_id": result.get("task_id"),
+                }
+            )
         except Exception as e:
-            print(f"Generation failed: {e}")
+            print("Generation failed:", e)
             traceback.print_exc()
 
     if not assets:
@@ -193,37 +188,44 @@ def generate_assets():
     campaign["assets"] = assets
     campaign["updated_at"] = datetime.utcnow().isoformat()
 
-    return jsonify({
-        "success": True,
-        "campaign_id": campaign_id,
-        "assets": assets
-    }), 200
+    return jsonify(
+        {
+            "success": True,
+            "campaign_id": campaign_id,
+            "assets": assets,
+        }
+    ), 200
 
 
-@creative_assets_bp.route("/api/save-selected-assets", methods=["POST"])
+@creative_assets_bp.route("/api/save-selected-assets", methods=["POST", "OPTIONS"])
+@cross_origin(
+    origins=["http://localhost:5173", "https://markos-awjq.vercel.app"]
+)
 def save_selected_assets():
-    data = request.get_json()
+    if request.method == "OPTIONS":
+        return "", 204
+
+    data = request.get_json(silent=True) or {}
 
     campaign_id = data.get("campaign_id")
     selected_assets = data.get("selected_assets", [])
 
-    if campaign_id not in campaigns:
+    if not campaign_id or campaign_id not in campaigns:
         return jsonify({"error": "Campaign not found"}), 404
 
     campaigns[campaign_id]["selected_assets"] = selected_assets
     campaigns[campaign_id]["updated_at"] = datetime.utcnow().isoformat()
 
-    return jsonify({
-        "success": True,
-        "saved": len(selected_assets)
-    }), 200
+    return jsonify({"success": True, "saved": len(selected_assets)}), 200
 
 
 @creative_assets_bp.route("/api/creative/health", methods=["GET"])
 def health():
-    return jsonify({
-        "status": "healthy",
-        "service": "creative-assets",
-        "runway_configured": bool(client),
-        "campaign_count": len(campaigns)
-    }), 200
+    return jsonify(
+        {
+            "status": "healthy",
+            "service": "creative-assets",
+            "runway_configured": bool(client),
+            "campaign_count": len(campaigns),
+        }
+    ), 200
