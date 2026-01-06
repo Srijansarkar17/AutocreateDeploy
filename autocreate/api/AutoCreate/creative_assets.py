@@ -1,16 +1,23 @@
 import os
-import uuid
-from datetime import datetime
 from flask import Blueprint, request, jsonify
 from runwayml import RunwayML
 
+# --------------------------------------------------
+# Blueprint
+# --------------------------------------------------
 creative_assets_bp = Blueprint("creative_assets", __name__)
 
+# --------------------------------------------------
+# Runway Client
+# --------------------------------------------------
 RUNWAY_API_KEY = os.getenv("RUNWAY_API_KEY")
 client = RunwayML(api_key=RUNWAY_API_KEY) if RUNWAY_API_KEY else None
 
 
-def get_mime_type(filename):
+# --------------------------------------------------
+# Helpers
+# --------------------------------------------------
+def get_mime_type(filename: str) -> str:
     ext = filename.lower().split(".")[-1]
     return {
         "png": "image/png",
@@ -20,7 +27,7 @@ def get_mime_type(filename):
     }.get(ext, "image/png")
 
 
-def generate_image_with_runway(image_b64, prompt, filename):
+def generate_image_with_runway(image_b64: str, prompt: str, filename: str):
     if not client:
         raise RuntimeError("RUNWAY_API_KEY not configured")
 
@@ -31,7 +38,10 @@ def generate_image_with_runway(image_b64, prompt, filename):
         model="gen4_image_turbo",
         ratio="1080:1080",
         prompt_text=prompt,
-        reference_images=[{"uri": data_uri, "tag": "product"}],
+        reference_images=[{
+            "uri": data_uri,
+            "tag": "product"
+        }],
     )
 
     result = task.wait_for_task_output()
@@ -46,67 +56,74 @@ def generate_image_with_runway(image_b64, prompt, filename):
 
 
 # --------------------------------------------------
-# STATELESS GENERATION (Railway-safe)
+# ROUTES (STATELESS, PRODUCTION SAFE)
 # --------------------------------------------------
 @creative_assets_bp.route("/api/generate-assets", methods=["POST", "OPTIONS"])
 def generate_assets():
-    data = request.get_json()
+    try:
+        data = request.get_json(force=True)
 
-    image_data = data.get("image_data")
-    filename = data.get("filename", "image.png")
-    campaign_goal = data.get("campaign_goal", "awareness")
-    ad_type = data.get("ad_type")
+        image_data = data.get("image_data")
+        filename = data.get("filename", "image.png")
+        campaign_goal = data.get("campaign_goal", "awareness")
+        ad_type = data.get("ad_type")
 
-    if not image_data:
-        return jsonify({"error": "image_data is required"}), 400
+        if not image_data:
+            return jsonify({"error": "image_data is required"}), 400
 
-    if not ad_type:
-        return jsonify({"error": "ad_type is required"}), 400
+        if not ad_type:
+            return jsonify({"error": "ad_type is required"}), 400
 
-    goal_prompts = {
-        "awareness": "eye-catching brand awareness advertisement",
-        "consideration": "engaging product showcase",
-        "conversions": "conversion-focused advertisement",
-        "retention": "customer retention advertisement"
-    }
+        goal_prompts = {
+            "awareness": "eye-catching brand awareness advertisement",
+            "consideration": "engaging product showcase",
+            "conversions": "conversion-focused advertisement",
+            "retention": "customer retention advertisement"
+        }
 
-    base_prompt = goal_prompts.get(campaign_goal, "professional product advertisement")
+        base_prompt = goal_prompts.get(
+            campaign_goal,
+            "professional product advertisement"
+        )
 
-    prompts = [
-        f"@product in {ad_type}, {base_prompt}, studio lighting, commercial photography",
-        f"@product in {ad_type}, lifestyle setting, natural lighting, modern aesthetic",
-        f"@product in {ad_type}, minimalist design, bold colors, marketing focused",
-        f"@product in {ad_type}, creative concept, premium quality",
-        f"@product in {ad_type}, social media optimized, vibrant colors"
-    ]
+        prompts = [
+            f"@product in {ad_type}, {base_prompt}, studio lighting, commercial photography",
+            f"@product in {ad_type}, lifestyle setting, natural lighting, modern aesthetic",
+            f"@product in {ad_type}, minimalist design, bold colors, marketing focused",
+            f"@product in {ad_type}, creative concept, premium quality",
+            f"@product in {ad_type}, social media optimized, vibrant colors"
+        ]
 
-    assets = []
+        assets = []
 
-    for i, prompt in enumerate(prompts):
-        try:
+        for i, prompt in enumerate(prompts):
             result = generate_image_with_runway(
                 image_data,
                 prompt,
                 filename
             )
+
             assets.append({
                 "id": i + 1,
                 "title": f"{ad_type} – Variation {i + 1}",
                 "image_url": result["image_url"],
                 "prompt": prompt,
                 "score": 85 + i * 2,
-                "task_id": result["task_id"]
+                "task_id": result["task_id"],
+                "type": "ai_generated"
             })
-        except Exception as e:
-            print("Generation failed:", e)
 
-    if not assets:
-        return jsonify({"error": "Failed to generate assets"}), 500
+        return jsonify({
+            "success": True,
+            "assets": assets
+        }), 200
 
-    return jsonify({
-        "success": True,
-        "assets": assets
-    }), 200
+    except Exception as e:
+        print("❌ Generation error:", e)
+        return jsonify({
+            "error": "Failed to generate assets",
+            "details": str(e)
+        }), 500
 
 
 @creative_assets_bp.route("/api/creative/health", methods=["GET"])
