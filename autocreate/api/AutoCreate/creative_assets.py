@@ -1,9 +1,10 @@
-# creative_assets.py
+# creative_assets.py - Add at the top
 import os
 import uuid
 import traceback
 from datetime import datetime
 from flask import Blueprint, request, jsonify
+from flask_cors import cross_origin  # Add this import
 from runwayml import RunwayML
 
 # --------------------------------------------------
@@ -64,10 +65,11 @@ def generate_image_with_runway(image_b64, prompt, filename):
     }
 
 # --------------------------------------------------
-# Routes
+# Routes - Add @cross_origin() decorator
 # --------------------------------------------------
 
 @creative_assets_bp.route("/api/upload-image", methods=["POST"])
+@cross_origin()  # Add this decorator
 def upload_image():
     data = request.get_json()
 
@@ -105,6 +107,7 @@ def upload_image():
 
 
 @creative_assets_bp.route("/api/generate-assets", methods=["POST"])
+@cross_origin()  # Add this decorator
 def generate_assets():
     data = request.get_json()
 
@@ -192,6 +195,7 @@ def generate_assets():
 
 
 @creative_assets_bp.route("/api/save-selected-assets", methods=["POST"])
+@cross_origin()  # Add this decorator
 def save_selected_assets():
     data = request.get_json()
 
@@ -211,6 +215,7 @@ def save_selected_assets():
 
 
 @creative_assets_bp.route("/api/creative/health", methods=["GET"])
+@cross_origin()  # Add this decorator
 def health():
     return jsonify({
         "status": "healthy",
