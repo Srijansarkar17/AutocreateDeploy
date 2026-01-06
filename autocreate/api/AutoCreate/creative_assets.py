@@ -69,7 +69,7 @@ def generate_image_with_runway(image_b64, prompt, filename):
 # Routes
 # --------------------------------------------------
 
-@creative_assets_bp.route("/api/upload-image", methods=["POST"])
+@creative_assets_bp.route("/api/upload-image", methods=["POST", "OPTIONS"])
 def upload_image():
     data = request.get_json()
     user_id = data.get("user_id")
@@ -100,7 +100,7 @@ def upload_image():
     }), 200
 
 
-@creative_assets_bp.route("/api/generate-assets", methods=["POST"])
+@creative_assets_bp.route("/api/generate-assets", methods=["POST", "OPTIONS"])
 def generate_assets():
     data = request.get_json()
     user_id = data.get("user_id")
@@ -167,7 +167,7 @@ def generate_assets():
     }), 200
 
 
-@creative_assets_bp.route("/api/save-selected-assets", methods=["POST"])
+@creative_assets_bp.route("/api/save-selected-assets", methods=["POST","OPTIONS"])
 def save_selected_assets():
     data = request.get_json()
     campaign_id = data.get("campaign_id")
@@ -185,7 +185,7 @@ def save_selected_assets():
     }), 200
 
 
-@creative_assets_bp.route("/api/create-campaign", methods=["POST"])
+@creative_assets_bp.route("/api/create-campaign", methods=["POST", "OPTIONS"])
 def create_campaign():
     data = request.get_json()
     user_id = data.get("user_id")
@@ -208,7 +208,7 @@ def create_campaign():
     }), 200
 
 
-@creative_assets_bp.route("/api/creative/health", methods=["GET"])
+@creative_assets_bp.route("/api/creative/health", methods=["GET", "OPTIONS"])
 def health():
     return jsonify({
         "status": "healthy",
