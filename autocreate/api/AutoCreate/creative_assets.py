@@ -5,6 +5,8 @@ import traceback
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 from runwayml import RunwayML
+from flask_cors import cross_origin
+
 
 # --------------------------------------------------
 # Blueprint
@@ -105,6 +107,10 @@ def upload_image():
 
 
 @creative_assets_bp.route("/api/generate-assets", methods=["POST","OPTIONS"])
+@cross_origin(
+    origins=["http://localhost:5173", "https://markos-awjq.vercel.app"],
+    supports_credentials=True
+)
 def generate_assets():
     if request.method == "OPTIONS":
         return "", 204
