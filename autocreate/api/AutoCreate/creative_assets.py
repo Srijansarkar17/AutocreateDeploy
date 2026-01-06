@@ -10,7 +10,7 @@ from runwayml import RunwayML, TaskFailedError
 # Blueprint
 # --------------------------------------------------
 
-creative_assets_bp = Blueprint("creative_assets", _name_)
+creative_assets_bp = Blueprint("creative_assets", __name__)
 
 # --------------------------------------------------
 # Runway Client
