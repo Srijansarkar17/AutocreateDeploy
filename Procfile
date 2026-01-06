@@ -1,1 +1,1 @@
-web: gunicorn autocreate.main:app
+web: gunicorn autocreate.main:app --workers 1
