@@ -1,35 +1,14 @@
-# creative_assets.py
 import os
-import base64
 import uuid
-import traceback
 from datetime import datetime
 from flask import Blueprint, request, jsonify
-from runwayml import RunwayML, TaskFailedError
-
-# --------------------------------------------------
-# Blueprint
-# --------------------------------------------------
+from runwayml import RunwayML
 
 creative_assets_bp = Blueprint("creative_assets", __name__)
-
-# --------------------------------------------------
-# Runway Client
-# --------------------------------------------------
 
 RUNWAY_API_KEY = os.getenv("RUNWAY_API_KEY")
 client = RunwayML(api_key=RUNWAY_API_KEY) if RUNWAY_API_KEY else None
 
-# --------------------------------------------------
-# In-memory storage (replace with DB later)
-# --------------------------------------------------
-
-campaigns = {}
-user_uploads = {}
-
-# --------------------------------------------------
-# Helpers
-# --------------------------------------------------
 
 def get_mime_type(filename):
     ext = filename.lower().split(".")[-1]
@@ -65,55 +44,21 @@ def generate_image_with_runway(image_b64, prompt, filename):
         "task_id": task.id
     }
 
+
 # --------------------------------------------------
-# Routes
+# STATELESS GENERATION (Railway-safe)
 # --------------------------------------------------
-
-@creative_assets_bp.route("/api/upload-image", methods=["POST", "OPTIONS"])
-def upload_image():
-    data = request.get_json()
-    user_id = data.get("user_id")
-    image_data = data.get("image_data")
-    filename = data.get("filename", "image.png")
-    campaign_id = data.get("campaign_id") or f"campaign_{uuid.uuid4().hex[:8]}"
-    ad_type = data.get("ad_type", "")
-
-    if not user_id or not image_data:
-        return jsonify({"error": "Missing user_id or image_data"}), 400
-
-    user_uploads.setdefault(user_id, {})[campaign_id] = {
-        "image_data": image_data,
-        "filename": filename,
-        "ad_type": ad_type,
-        "uploaded_at": datetime.utcnow().isoformat()
-    }
-
-    campaigns.setdefault(campaign_id, {
-        "user_id": user_id,
-        "created_at": datetime.utcnow().isoformat(),
-        "assets": []
-    })
-
-    return jsonify({
-        "success": True,
-        "campaign_id": campaign_id
-    }), 200
-
-
 @creative_assets_bp.route("/api/generate-assets", methods=["POST", "OPTIONS"])
 def generate_assets():
     data = request.get_json()
-    user_id = data.get("user_id")
-    campaign_id = data.get("campaign_id")
+
+    image_data = data.get("image_data")
+    filename = data.get("filename", "image.png")
     campaign_goal = data.get("campaign_goal", "awareness")
     ad_type = data.get("ad_type")
 
-    if not user_id or not campaign_id:
-        return jsonify({"error": "Missing user_id or campaign_id"}), 400
-
-    upload = user_uploads.get(user_id, {}).get(campaign_id)
-    if not upload:
-        return jsonify({"error": "No uploaded image found"}), 400
+    if not image_data:
+        return jsonify({"error": "image_data is required"}), 400
 
     if not ad_type:
         return jsonify({"error": "ad_type is required"}), 400
@@ -140,9 +85,9 @@ def generate_assets():
     for i, prompt in enumerate(prompts):
         try:
             result = generate_image_with_runway(
-                upload["image_data"],
+                image_data,
                 prompt,
-                upload["filename"]
+                filename
             )
             assets.append({
                 "id": i + 1,
@@ -153,62 +98,18 @@ def generate_assets():
                 "task_id": result["task_id"]
             })
         except Exception as e:
-            print(f"Generation failed: {e}")
+            print("Generation failed:", e)
 
     if not assets:
         return jsonify({"error": "Failed to generate assets"}), 500
 
-    campaigns[campaign_id]["assets"] = assets
-
     return jsonify({
         "success": True,
-        "campaign_id": campaign_id,
         "assets": assets
     }), 200
 
 
-@creative_assets_bp.route("/api/save-selected-assets", methods=["POST","OPTIONS"])
-def save_selected_assets():
-    data = request.get_json()
-    campaign_id = data.get("campaign_id")
-    selected_assets = data.get("selected_assets", [])
-
-    if campaign_id not in campaigns:
-        return jsonify({"error": "Campaign not found"}), 404
-
-    campaigns[campaign_id]["selected_assets"] = selected_assets
-    campaigns[campaign_id]["updated_at"] = datetime.utcnow().isoformat()
-
-    return jsonify({
-        "success": True,
-        "saved": len(selected_assets)
-    }), 200
-
-
-@creative_assets_bp.route("/api/create-campaign", methods=["POST", "OPTIONS"])
-def create_campaign():
-    data = request.get_json()
-    user_id = data.get("user_id")
-    goal = data.get("campaign_goal", "awareness")
-
-    if not user_id:
-        return jsonify({"error": "Missing user_id"}), 400
-
-    campaign_id = f"campaign_{uuid.uuid4().hex[:8]}"
-    campaigns[campaign_id] = {
-        "user_id": user_id,
-        "campaign_goal": goal,
-        "created_at": datetime.utcnow().isoformat(),
-        "assets": []
-    }
-
-    return jsonify({
-        "success": True,
-        "campaign_id": campaign_id
-    }), 200
-
-
-@creative_assets_bp.route("/api/creative/health", methods=["GET", "OPTIONS"])
+@creative_assets_bp.route("/api/creative/health", methods=["GET"])
 def health():
     return jsonify({
         "status": "healthy",
