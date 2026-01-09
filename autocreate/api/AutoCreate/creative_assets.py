@@ -1,36 +1,22 @@
 import os
-import base64
-import uuid
-import traceback
-from datetime import datetime
 from flask import Blueprint, request, jsonify
-from runwayml import RunwayML, TaskFailedError
+from runwayml import RunwayML
 
 # --------------------------------------------------
 # Blueprint
 # --------------------------------------------------
-
 creative_assets_bp = Blueprint("creative_assets", __name__)
 
 # --------------------------------------------------
 # Runway Client
 # --------------------------------------------------
-
 RUNWAY_API_KEY = os.getenv("RUNWAY_API_KEY")
 client = RunwayML(api_key=RUNWAY_API_KEY) if RUNWAY_API_KEY else None
 
 # --------------------------------------------------
-# In-memory storage (replace with DB later)
-# --------------------------------------------------
-
-campaigns = {}
-user_uploads = {}
-
-# --------------------------------------------------
 # Helpers
 # --------------------------------------------------
-
-def get_mime_type(filename):
+def get_mime_type(filename: str) -> str:
     ext = filename.lower().split(".")[-1]
     return {
         "png": "image/png",
@@ -40,7 +26,11 @@ def get_mime_type(filename):
     }.get(ext, "image/png")
 
 
-def generate_image_with_runway(image_b64, prompt, filename):
+def start_runway_generation(image_b64: str, prompt: str, filename: str):
+    """
+    Starts Runway generation WITHOUT blocking.
+    Returns task_id immediately (PRODUCTION SAFE).
+    """
     if not client:
         raise RuntimeError("RUNWAY_API_KEY not configured")
 
@@ -51,160 +41,133 @@ def generate_image_with_runway(image_b64, prompt, filename):
         model="gen4_image_turbo",
         ratio="1080:1080",
         prompt_text=prompt,
-        reference_images=[{"uri": data_uri, "tag": "product"}],
+        reference_images=[
+            {
+                "uri": data_uri,
+                "tag": "product"
+            }
+        ],
     )
 
-    result = task.wait_for_task_output()
-
-    if not result or not result.output:
-        raise RuntimeError("Runway returned no output")
-
     return {
-        "image_url": result.output[0],
-        "task_id": task.id
+        "task_id": task.id,
+        "status": task.status
     }
 
 # --------------------------------------------------
-# Routes
+# ROUTES
 # --------------------------------------------------
 
-@creative_assets_bp.route("/api/upload-image", methods=["POST"])
-def upload_image():
-    data = request.get_json()
-    user_id = data.get("user_id")
-    image_data = data.get("image_data")
-    filename = data.get("filename", "image.png")
-    campaign_id = data.get("campaign_id") or f"campaign_{uuid.uuid4().hex[:8]}"
-    ad_type = data.get("ad_type", "")
-
-    if not user_id or not image_data:
-        return jsonify({"error": "Missing user_id or image_data"}), 400
-
-    user_uploads.setdefault(user_id, {})[campaign_id] = {
-        "image_data": image_data,
-        "filename": filename,
-        "ad_type": ad_type,
-        "uploaded_at": datetime.utcnow().isoformat()
-    }
-
-    campaigns.setdefault(campaign_id, {
-        "user_id": user_id,
-        "created_at": datetime.utcnow().isoformat(),
-        "assets": []
-    })
-
-    return jsonify({
-        "success": True,
-        "campaign_id": campaign_id
-    }), 200
-
-
-@creative_assets_bp.route("/api/generate-assets", methods=["POST"])
+@creative_assets_bp.route("/api/generate-assets", methods=["POST", "OPTIONS"])
 def generate_assets():
-    data = request.get_json()
-    user_id = data.get("user_id")
-    campaign_id = data.get("campaign_id")
-    campaign_goal = data.get("campaign_goal", "awareness")
-    ad_type = data.get("ad_type")
+    """
+    Starts image generation and returns task_id.
+    DOES NOT WAIT FOR RESULT (Gunicorn-safe).
+    """
+    try:
+        if request.method == "OPTIONS":
+            return jsonify({"ok": True}), 200
 
-    if not user_id or not campaign_id:
-        return jsonify({"error": "Missing user_id or campaign_id"}), 400
+        data = request.get_json(force=True)
 
-    upload = user_uploads.get(user_id, {}).get(campaign_id)
-    if not upload:
-        return jsonify({"error": "No uploaded image found"}), 400
+        image_data = data.get("image_data")
+        filename = data.get("filename", "image.png")
+        campaign_goal = data.get("campaign_goal", "awareness")
+        ad_type = data.get("ad_type")
 
-    if not ad_type:
-        return jsonify({"error": "ad_type is required"}), 400
+        if not image_data:
+            return jsonify({"error": "image_data is required"}), 400
 
-    goal_prompts = {
-        "awareness": "eye-catching brand awareness advertisement",
-        "consideration": "engaging product showcase",
-        "conversions": "conversion-focused advertisement",
-        "retention": "customer retention advertisement"
-    }
+        if not ad_type:
+            return jsonify({"error": "ad_type is required"}), 400
 
-    base_prompt = goal_prompts.get(campaign_goal, "professional product advertisement")
+        if not client:
+            return jsonify({
+                "error": "RUNWAY_API_KEY not configured"
+            }), 500
 
-    prompts = [
-        f"@product in {ad_type}, {base_prompt}, studio lighting, commercial photography",
-        f"@product in {ad_type}, lifestyle setting, natural lighting, modern aesthetic",
-        f"@product in {ad_type}, minimalist design, bold colors, marketing focused",
-        f"@product in {ad_type}, creative concept, premium quality",
-        f"@product in {ad_type}, social media optimized, vibrant colors"
-    ]
+        goal_prompts = {
+            "awareness": "eye-catching brand awareness advertisement",
+            "consideration": "engaging product showcase",
+            "conversions": "conversion-focused advertisement",
+            "retention": "customer retention advertisement"
+        }
 
-    assets = []
+        base_prompt = goal_prompts.get(
+            campaign_goal,
+            "professional product advertisement"
+        )
 
-    for i, prompt in enumerate(prompts):
-        try:
-            result = generate_image_with_runway(
-                upload["image_data"],
-                prompt,
-                upload["filename"]
-            )
-            assets.append({
-                "id": i + 1,
-                "title": f"{ad_type} – Variation {i + 1}",
-                "image_url": result["image_url"],
-                "prompt": prompt,
-                "score": 85 + i * 2,
-                "task_id": result["task_id"]
-            })
-        except Exception as e:
-            print(f"Generation failed: {e}")
+        prompt = (
+            f"@product in {ad_type}, "
+            f"{base_prompt}, "
+            f"studio lighting, commercial photography, high quality"
+        )
 
-    if not assets:
-        return jsonify({"error": "Failed to generate assets"}), 500
+        task_info = start_runway_generation(
+            image_data,
+            prompt,
+            filename
+        )
 
-    campaigns[campaign_id]["assets"] = assets
+        return jsonify({
+            "success": True,
+            "task_id": task_info["task_id"],
+            "status": "processing",
+            "message": "Image generation started"
+        }), 202
 
-    return jsonify({
-        "success": True,
-        "campaign_id": campaign_id,
-        "assets": assets
-    }), 200
+    except Exception as e:
+        import traceback
+        print("❌ generate_assets error:", traceback.format_exc())
 
-
-@creative_assets_bp.route("/api/save-selected-assets", methods=["POST"])
-def save_selected_assets():
-    data = request.get_json()
-    campaign_id = data.get("campaign_id")
-    selected_assets = data.get("selected_assets", [])
-
-    if campaign_id not in campaigns:
-        return jsonify({"error": "Campaign not found"}), 404
-
-    campaigns[campaign_id]["selected_assets"] = selected_assets
-    campaigns[campaign_id]["updated_at"] = datetime.utcnow().isoformat()
-
-    return jsonify({
-        "success": True,
-        "saved": len(selected_assets)
-    }), 200
+        return jsonify({
+            "error": "Failed to start generation",
+            "details": str(e),
+            "type": type(e).__name__
+        }), 500
 
 
-@creative_assets_bp.route("/api/create-campaign", methods=["POST"])
-def create_campaign():
-    data = request.get_json()
-    user_id = data.get("user_id")
-    goal = data.get("campaign_goal", "awareness")
+@creative_assets_bp.route("/api/runway-task/<task_id>", methods=["GET"])
+def get_runway_task_status(task_id):
+    """
+    Poll Runway task status.
+    Frontend should call this every 3–5 seconds.
+    """
+    try:
+        if not client:
+            return jsonify({
+                "error": "RUNWAY_API_KEY not configured"
+            }), 500
 
-    if not user_id:
-        return jsonify({"error": "Missing user_id"}), 400
+        task = client.tasks.retrieve(task_id)
 
-    campaign_id = f"campaign_{uuid.uuid4().hex[:8]}"
-    campaigns[campaign_id] = {
-        "user_id": user_id,
-        "campaign_goal": goal,
-        "created_at": datetime.utcnow().isoformat(),
-        "assets": []
-    }
+        if task.status == "succeeded":
+            return jsonify({
+                "status": "succeeded",
+                "image_url": task.output[0],
+                "task_id": task_id
+            }), 200
 
-    return jsonify({
-        "success": True,
-        "campaign_id": campaign_id
-    }), 200
+        if task.status == "failed":
+            return jsonify({
+                "status": "failed",
+                "task_id": task_id
+            }), 500
+
+        return jsonify({
+            "status": task.status,
+            "task_id": task_id
+        }), 200
+
+    except Exception as e:
+        import traceback
+        print("❌ get_runway_task_status error:", traceback.format_exc())
+
+        return jsonify({
+            "error": "Failed to fetch task status",
+            "details": str(e)
+        }), 500
 
 
 @creative_assets_bp.route("/api/creative/health", methods=["GET"])
